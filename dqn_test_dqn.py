@@ -7,6 +7,12 @@ from collections import deque
 import matplotlib.pyplot as plt
 
 
+# Gerät für Torch auswählen
+device = torch.device("mps" if torch.backends.mps.is_available() else
+                      "cuda" if torch.cuda.is_available() else
+                      "cpu")
+print(f"Verwendetes Gerät: {device}")
+
 # =========================
 # 1) Einfaches CNN-Modell
 # =========================
@@ -22,8 +28,13 @@ class DQNCNN(nn.Module):
             nn.ReLU()
         )
         # Aus Flatten kommt etwa 32*4*8 = 1024 Neuronen (bei exakt 22x40 Eingabe).
+        # self.fc = nn.Sequential(
+        #     nn.Linear(32 * 4 * 8, 128),  # alt
+        #     ...
+        # )
+
         self.fc = nn.Sequential(
-            nn.Linear(32 * 4 * 8, 128),
+            nn.Linear(32 * 11 * 18, 128),
             nn.ReLU(),
             nn.Linear(128, num_actions)
         )
@@ -106,11 +117,11 @@ class DQNAgent:
             state = state.unsqueeze(0)  # -> (1, Channels, H, W)
 
         # Epsilon-Berechnung:
-        eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
+        self.eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
                         np.exp(-1.0 * self.steps_done / self.eps_decay)
         self.steps_done += 1
 
-        if random.random() < eps_threshold:
+        if random.random() < self.eps_threshold:
             return random.randrange(self.num_actions)
         else:
             with torch.no_grad():
@@ -164,55 +175,71 @@ def train_dqn(env, num_episodes=500):
     episode_losses = []
 
     for episode in range(num_episodes):
-        # Starte Episode
         env.reset()
         env.render()
-        state_img = env.get_state()
-        if not torch.is_tensor(state_img):
-            state_img = torch.tensor(state_img, dtype=torch.float32)
-        # [1, H, W] oder [H, W], also ggf. .unsqueeze(0)
+
+        # Frame 1:
+        current_frame = env.get_state()
+        if current_frame is None:
+            # Falls das Environment doch kein Bild zurückgibt, skip
+            continue
+        if not torch.is_tensor(current_frame):
+            current_frame = torch.tensor(current_frame, dtype=torch.float32)
+
+        # Zu Beginn haben wir kein prev_frame, also diff = 0
+        prev_frame = current_frame.clone()
+        state_img = torch.zeros_like(current_frame)  # Erster Zustand => Null-Differenz
 
         done = False
         episode_reward = 0.0
-        episode_loss = 0.0  # Summe des Loss in dieser Episode
-        loss_count = 0      # Wie oft optimize() mit validem Batch aufgerufen wurde
+        episode_loss = 0.0
+        loss_count = 0
 
         while not done:
+            # Aktion auswählen basierend auf dem Differenzbild
             action = agent.select_action(state_img)
 
-            # Step in der Umgebung
+            # Schritt in der Umgebung
             _, reward, done, _ = env.step(action)
             episode_reward += reward
 
-            # Nächsten State holen
-            next_state_img = env.get_state()
-            if not torch.is_tensor(next_state_img):
-                next_state_img = torch.tensor(next_state_img, dtype=torch.float32)
+            # Nächsten Frame holen
+            next_frame = env.get_state()
+            if next_frame is None:
+                # Falls kein Bild -> Break
+                done = True
+                break
+            if not torch.is_tensor(next_frame):
+                next_frame = torch.tensor(next_frame, dtype=torch.float32)
 
-            # In ReplayBuffer pushen
+            # Differenz berechnen (Movement)
+            next_state_img = next_frame - current_frame
+
+            # Replay speichern
             agent.replay_buffer.push(
-                state_img.unsqueeze(0),  # (Batch=1, Channels=1, H, W) kann man anpassen
+                state_img.unsqueeze(0),  # shape (1, H, W)
                 action,
                 reward,
                 next_state_img.unsqueeze(0),
                 done
             )
 
-            # Training (Stichprobe aus Replay)
+            # Training
             loss_val = agent.optimize()
             if loss_val is not None:
                 episode_loss += loss_val.item()
                 loss_count += 1
 
+            # Vorbereiten für nächste Schleife
+            prev_frame = current_frame
+            current_frame = next_frame
             state_img = next_state_img
 
-        # Nach Ende der Episode:
-        # Falls wir n-mal gesampelt haben, mitteln oder summieren
         mean_loss = episode_loss / loss_count if loss_count > 0 else 0.0
         episode_rewards.append(episode_reward)
         episode_losses.append(mean_loss)
 
-        print(f"Episode {episode + 1}/{num_episodes}, Return: {episode_reward:.2f}, Loss: {mean_loss:.4f}")
+        print(f"Episode {episode + 1}/{num_episodes}, Return: {episode_reward:.2f}, Loss: {mean_loss:.4f}, Epsilon: {agent.eps_threshold}")
 
     print("Training abgeschlossen.")
     return agent, episode_rewards, episode_losses
@@ -277,7 +304,7 @@ if __name__ == "__main__":
     env = BallOnBallEnv()
 
     # Trainiere Agent
-    agent, rewards, losses = train_dqn(env, num_episodes=50)
+    agent, rewards, losses = train_dqn(env, num_episodes=200)
 
     # Plotte Trainingsergebnisse
     plt.figure(figsize=(12, 5))
