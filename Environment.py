@@ -1,9 +1,26 @@
-import gym
-from gym import spaces
+from datetime import time
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
+import torch
+import matplotlib.pyplot as plt
+import skimage.measure
+from sympy.physics.units import action
+
+
+class CustomDrawOptions(DrawOptions):
+    def draw_circle(self, pos, radius, angle, outline_color, fill_color):
+        # Farben je nach Ballgröße definieren
+        if radius > 30:  # Großer Ball
+            fill_color = (0, 255, 0)  # Grün
+        else:  # Kleiner Ball
+            fill_color = (0, 0, 0)  # Schwarz
+
+        # Zeichne den Kreis ohne Querstrich
+        pygame.draw.circle(self.surface, fill_color, (int(pos[0]), int(pos[1])), int(radius))
 
 class BallOnBallEnv(gym.Env):
     """
@@ -17,7 +34,8 @@ class BallOnBallEnv(gym.Env):
         self.WIDTH = 800
         self.HEIGHT = 600
         self.GRAVITY = 1000
-        self.force_amount = 500.0  # Kraft durch Aktionen
+        self.OFFSETS = [0.1, -0.1] # Random values to not place in the perfect center of upper ball
+        self.force_amount = 700.0  # Kraft durch Aktionen
         self.ground_y = self.HEIGHT - 50
 
         # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
@@ -40,7 +58,7 @@ class BallOnBallEnv(gym.Env):
         self.small_body = None
         self.screen = None
         self.clock = None
-        self.draw_options = None
+        self.draw_options = CustomDrawOptions(self.screen)
         self.reset()
 
     def _create_static_line(self, start, end, thickness=5):
@@ -50,13 +68,15 @@ class BallOnBallEnv(gym.Env):
         shape.elasticity = 0.0
         self.space.add(shape)
 
-    def _create_circle(self, mass, radius, pos):
+    def _create_circle(self, mass, radius, pos, color, friction=0):
         moment = pymunk.moment_for_circle(mass, 0, radius)
         body = pymunk.Body(mass, moment)
         body.position = pos
         shape = pymunk.Circle(body, radius)
-        shape.friction = 1.0
+        shape.friction = friction
         shape.elasticity = 0.0
+        shape.color = pygame.Color(color)
+
         self.space.add(body, shape)
         return body
 
@@ -65,18 +85,20 @@ class BallOnBallEnv(gym.Env):
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
             if body != self.space.static_body:
+                for shape in body.shapes:
+                    self.space.remove(shape)
                 self.space.remove(body)
 
         # Erstelle die Kugeln
-        big_radius = 50
+        big_radius = 150
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
-        self.big_body = self._create_circle(big_mass, big_radius, big_pos)
+        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "gray")
 
-        small_radius = 20
+        small_radius = 60
         small_mass = 1
-        small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
-        self.small_body = self._create_circle(small_mass, small_radius, small_pos)
+        small_pos = (self.WIDTH / 2 + np.random.choice(self.OFFSETS), big_pos[1] - big_radius - small_radius - 1)
+        self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
 
         # Anfangszustand
         return self._get_state()
@@ -90,16 +112,17 @@ class BallOnBallEnv(gym.Env):
     def step(self, action):
         """Führt eine Aktion aus und gibt die Ergebnisse zurück."""
         if action == 0:  # Links
-            self.small_body.apply_force_at_local_point((-self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((-self.force_amount, 0))
+
         elif action == 2:  # Rechts
-            self.small_body.apply_force_at_local_point((self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((self.force_amount, 0))
 
         # Physik aktualisieren
         self.space.step(1 / 60.0)
 
         # Zustand, Belohnung und Fertigstellungsstatus
         state = self._get_state()
-        done = state[1] + 20 >= self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
+        done = state[1] + 80 > self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
         reward = 1.0 if not done else -10.0
 
         if done:
@@ -127,6 +150,30 @@ class BallOnBallEnv(gym.Env):
         pygame.display.update()
         self.clock.tick(60)
 
+    def get_state(self):
+        if self.screen is None:
+            return None
+        # Höhere Auflösung: 80x60
+        reduced_grayscale = pygame.transform.scale(self.screen, (80, 60))
+        reduced_array = pygame.surfarray.array3d(reduced_grayscale)
+
+        # In Graustufen umwandeln
+        final_grayscale = (
+                0.299 * reduced_array[:, :, 0] +
+                0.587 * reduced_array[:, :, 1] +
+                0.114 * reduced_array[:, :, 2]
+        )
+
+        # (H=60, W=80) => transponieren => (W=80, H=60), dann evtl. Cropping
+        grayscale_array = final_grayscale.astype(np.uint8).T
+        # Beispiel: Entweder Cropping anpassen oder ganz weglassen
+        # res = grayscale_array[6:-2] / 255.0
+        # Wir könnten das Cropping z. B. verändern. Nehmen wir an, wir wollen (50, 80):
+        res = grayscale_array[6:-2] / 255.0  # => (52, 80)
+
+        return torch.tensor(res, dtype=torch.float32)
+
+
     def close(self):
         """Optionale Aufräumarbeiten."""
         if self.screen is not None:
@@ -137,15 +184,51 @@ class BallOnBallEnv(gym.Env):
 
 # Beispiel-Test der Umgebung
 if __name__ == "__main__":
+    # Initialisiere die Umgebung
     env = BallOnBallEnv()
     state = env.reset()
     print("Startzustand:", state)
     done = False
 
-    while not done:
-        action = env.action_space.sample()  # Zufällige Aktion
+    # Initialisiere Pygame
+    pygame.init()
+    screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
+    env.render()
+    env.get_state()
+    while True:
+        action = env.action_space.sample()
         state, reward, done, info = env.step(action)
-        env.render()
         print(f"State: {state}, Reward: {reward}, Done: {done}")
+        env.render()
+        screen_array = env.get_state()
+        pass
 
-    env.close()
+    """print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
+
+    try:
+        while not done:
+            # Standardaktion: Nichts (1)
+            action = 1
+
+            # Prüfe, ob eine Taste gedrückt ist
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LEFT]:
+                action = 0  # Aktion: Links
+            elif keys[pygame.K_RIGHT]:
+                action = 2  # Aktion: Rechts
+            elif keys[pygame.K_UP]:
+                action = 1  # Aktion: Nichts
+
+            # Überprüfe andere Events, wie das Schließen des Fensters
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                    break
+
+            # Schritt in der Umgebung
+            state, reward, done, info = env.step(action)
+            env.render()
+            print(f"State: {state}, Reward: {reward}, Done: {done}")
+    finally:
+        env.close()
+        pygame.quit()"""
