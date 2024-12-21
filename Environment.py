@@ -1,3 +1,5 @@
+from random import randint
+
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -29,6 +31,7 @@ class BallOnBallEnv(gym.Env):
         self.WIDTH = 800
         self.HEIGHT = 600
         self.GRAVITY = 1000
+        self.OFFSETS = [0.1, -0.1] # Random values to not place in the perfect center of upper ball
         self.force_amount = 700.0  # Kraft durch Aktionen
         self.ground_y = self.HEIGHT - 50
 
@@ -91,7 +94,7 @@ class BallOnBallEnv(gym.Env):
 
         small_radius = 20
         small_mass = 1
-        small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
+        small_pos = (self.WIDTH / 2 + np.random.choice(self.OFFSETS), big_pos[1] - big_radius - small_radius - 1)
         self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
 
         # Anfangszustand
