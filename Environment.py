@@ -1,5 +1,7 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from dask.array import shape
+from docutils.utils.math.tex2unichar import space
+from gymnasium import spaces
 import numpy as np
 import pymunk
 import pygame
@@ -65,13 +67,18 @@ class BallOnBallEnv(gym.Env):
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
             if body != self.space.static_body:
+                print(len(list(body.shapes)))
+                for shape in body.shapes:
+                    self.space.remove(shape)
                 self.space.remove(body)
+
 
         # Erstelle die Kugeln
         big_radius = 50
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
         self.big_body = self._create_circle(big_mass, big_radius, big_pos)
+
 
         small_radius = 20
         small_mass = 1
@@ -109,6 +116,7 @@ class BallOnBallEnv(gym.Env):
 
     def render(self, mode="human"):
         """Optional: Rendering der Umgebung."""
+        print("rendering...")
         if self.screen is None:
             pygame.init()
             self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
