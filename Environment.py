@@ -1,11 +1,14 @@
-from random import randint
-
+from datetime import time
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
+import torch
+import matplotlib.pyplot as plt
+import skimage.measure
+from sympy.physics.units import action
 
 
 class CustomDrawOptions(DrawOptions):
@@ -87,12 +90,12 @@ class BallOnBallEnv(gym.Env):
                 self.space.remove(body)
 
         # Erstelle die Kugeln
-        big_radius = 50
+        big_radius = 150
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
-        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "red")
+        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "gray")
 
-        small_radius = 20
+        small_radius = 60
         small_mass = 1
         small_pos = (self.WIDTH / 2 + np.random.choice(self.OFFSETS), big_pos[1] - big_radius - small_radius - 1)
         self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
@@ -119,7 +122,7 @@ class BallOnBallEnv(gym.Env):
 
         # Zustand, Belohnung und Fertigstellungsstatus
         state = self._get_state()
-        done = state[1] + 25 > self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
+        done = state[1] + 80 > self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
         reward = 1.0 if not done else -10.0
 
         if done:
@@ -147,6 +150,23 @@ class BallOnBallEnv(gym.Env):
         pygame.display.update()
         self.clock.tick(60)
 
+    def get_state(self):
+        # Auflösung auf 40x30 reduzieren
+        reduced_grayscale = pygame.transform.scale(self.screen, (40, 30))
+        reduced_array = pygame.surfarray.array3d(reduced_grayscale)
+
+        # Das resultierende Array in Graustufen umwandeln
+        final_grayscale = 0.299 * reduced_array[:, :, 0] + 0.587 * reduced_array[:, :, 1] + 0.114 * reduced_array[:, :,
+                                                                                                    2]
+
+        # Als numpy-Array mit Shape (40, 30) konvertieren
+        grayscale_array = final_grayscale.astype(np.uint8).T
+
+        # Ausgabe: 40x30 Graustufenarray
+        res =  grayscale_array[6:-2]
+        torch.tensor(res)
+
+
     def close(self):
         """Optionale Aufräumarbeiten."""
         if self.screen is not None:
@@ -166,8 +186,17 @@ if __name__ == "__main__":
     # Initialisiere Pygame
     pygame.init()
     screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
+    env.render()
+    env.get_state()
+    while True:
+        action = env.action_space.sample()
+        state, reward, done, info = env.step(action)
+        print(f"State: {state}, Reward: {reward}, Done: {done}")
+        env.render()
+        screen_array = env.get_state()
+        pass
 
-    print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
+    """print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
 
     try:
         while not done:
@@ -195,4 +224,4 @@ if __name__ == "__main__":
             print(f"State: {state}, Reward: {reward}, Done: {done}")
     finally:
         env.close()
-        pygame.quit()
+        pygame.quit()"""
