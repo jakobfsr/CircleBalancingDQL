@@ -17,7 +17,7 @@ class BallOnBallEnv(gym.Env):
         self.WIDTH = 800
         self.HEIGHT = 600
         self.GRAVITY = 1000
-        self.force_amount = 5000.0  # Kraft durch Aktionen
+        self.force_amount = 700.0  # Kraft durch Aktionen
         self.ground_y = self.HEIGHT - 50
 
         # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
@@ -50,13 +50,14 @@ class BallOnBallEnv(gym.Env):
         shape.elasticity = 0.0
         self.space.add(shape)
 
-    def _create_circle(self, mass, radius, pos):
+    def _create_circle(self, mass, radius, pos, friction=0):
         moment = pymunk.moment_for_circle(mass, 0, radius)
         body = pymunk.Body(mass, moment)
         body.position = pos
         shape = pymunk.Circle(body, radius)
-        shape.friction = 1.0
+        shape.friction = friction
         shape.elasticity = 0.0
+
         self.space.add(body, shape)
         return body
 
@@ -65,6 +66,8 @@ class BallOnBallEnv(gym.Env):
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
             if body != self.space.static_body:
+                for shape in body.shapes:
+                    self.space.remove(shape)
                 self.space.remove(body)
 
         # Erstelle die Kugeln
@@ -76,7 +79,7 @@ class BallOnBallEnv(gym.Env):
         small_radius = 20
         small_mass = 1
         small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
-        self.small_body = self._create_circle(small_mass, small_radius, small_pos)
+        self.small_body = self._create_circle(small_mass, small_radius, small_pos, friction=1)
 
         # Anfangszustand
         return self._get_state()
@@ -90,9 +93,10 @@ class BallOnBallEnv(gym.Env):
     def step(self, action):
         """Führt eine Aktion aus und gibt die Ergebnisse zurück."""
         if action == 0:  # Links
-            self.small_body.apply_force_at_local_point((-self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((-self.force_amount, 0))
+
         elif action == 2:  # Rechts
-            self.small_body.apply_force_at_local_point((self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((self.force_amount, 0))
 
         # Physik aktualisieren
         self.space.step(1 / 60.0)
