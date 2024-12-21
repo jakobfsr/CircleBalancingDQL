@@ -4,6 +4,8 @@ import numpy as np
 import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
+import matplotlib.pyplot as plt
+import skimage.measure
 
 class BallOnBallEnv(gym.Env):
     """
@@ -68,12 +70,12 @@ class BallOnBallEnv(gym.Env):
                 self.space.remove(body)
 
         # Erstelle die Kugeln
-        big_radius = 50
+        big_radius = 150
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
         self.big_body = self._create_circle(big_mass, big_radius, big_pos)
 
-        small_radius = 20
+        small_radius = 60
         small_mass = 1
         small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
         self.small_body = self._create_circle(small_mass, small_radius, small_pos)
@@ -127,6 +129,26 @@ class BallOnBallEnv(gym.Env):
         pygame.display.update()
         self.clock.tick(60)
 
+    def get_screen(self):
+        array = pygame.surfarray.pixels3d(self.screen)
+        grayscale = 0.299 * array[:, :, 0] + 0.587 * array[:, :, 1] + 0.114 * array[:, :, 2]
+
+        # Auflösung auf 40x30 reduzieren
+        reduced_grayscale = pygame.transform.scale(self.screen, (40, 30))
+        reduced_array = pygame.surfarray.array3d(reduced_grayscale)
+
+        # Das resultierende Array in Graustufen umwandeln
+        final_grayscale = 0.299 * reduced_array[:, :, 0] + 0.587 * reduced_array[:, :, 1] + 0.114 * reduced_array[:, :,
+                                                                                                    2]
+
+        # Als numpy-Array mit Shape (40, 30) konvertieren
+        grayscale_array = final_grayscale.astype(np.uint8)
+
+        # Ausgabe: 40x30 Graustufenarray
+        print(grayscale_array)
+
+
+
     def close(self):
         """Optionale Aufräumarbeiten."""
         if self.screen is not None:
@@ -146,8 +168,10 @@ if __name__ == "__main__":
     # Initialisiere Pygame
     pygame.init()
     screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
+    env.render()
+    env.get_screen()
 
-    print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
+    """print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
 
     try:
         while not done:
@@ -175,4 +199,4 @@ if __name__ == "__main__":
             print(f"State: {state}, Reward: {reward}, Done: {done}")
     finally:
         env.close()
-        pygame.quit()
+        pygame.quit()"""
