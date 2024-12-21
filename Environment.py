@@ -1,5 +1,5 @@
-import gym
-from gym import spaces
+import gymnasium as gym
+from gymnasium import spaces
 import numpy as np
 import pymunk
 import pygame
@@ -99,7 +99,7 @@ class BallOnBallEnv(gym.Env):
 
         # Zustand, Belohnung und Fertigstellungsstatus
         state = self._get_state()
-        done = state[1] + 20 >= self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
+        done = state[1] > 520  #self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
         reward = 1.0 if not done else -10.0
 
         if done:
