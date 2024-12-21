@@ -7,6 +7,18 @@ from pymunk.pygame_util import DrawOptions
 import matplotlib.pyplot as plt
 import skimage.measure
 
+
+class CustomDrawOptions(DrawOptions):
+    def draw_circle(self, pos, radius, angle, outline_color, fill_color):
+        # Farben je nach Ballgröße definieren
+        if radius > 30:  # Großer Ball
+            fill_color = (0, 255, 0)  # Grün
+        else:  # Kleiner Ball
+            fill_color = (0, 0, 0)  # Schwarz
+
+        # Zeichne den Kreis ohne Querstrich
+        pygame.draw.circle(self.surface, fill_color, (int(pos[0]), int(pos[1])), int(radius))
+
 class BallOnBallEnv(gym.Env):
     """
     Gymnasium-Umgebung für das 2D-Physikspiel "Kugel auf Kugel".
@@ -19,7 +31,7 @@ class BallOnBallEnv(gym.Env):
         self.WIDTH = 800
         self.HEIGHT = 600
         self.GRAVITY = 1000
-        self.force_amount = 5000.0  # Kraft durch Aktionen
+        self.force_amount = 700.0  # Kraft durch Aktionen
         self.ground_y = self.HEIGHT - 50
 
         # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
@@ -42,7 +54,7 @@ class BallOnBallEnv(gym.Env):
         self.small_body = None
         self.screen = None
         self.clock = None
-        self.draw_options = None
+        self.draw_options = CustomDrawOptions(self.screen)
         self.reset()
 
     def _create_static_line(self, start, end, thickness=5):
@@ -52,13 +64,15 @@ class BallOnBallEnv(gym.Env):
         shape.elasticity = 0.0
         self.space.add(shape)
 
-    def _create_circle(self, mass, radius, pos):
+    def _create_circle(self, mass, radius, pos, color, friction=0):
         moment = pymunk.moment_for_circle(mass, 0, radius)
         body = pymunk.Body(mass, moment)
         body.position = pos
         shape = pymunk.Circle(body, radius)
-        shape.friction = 1.0
+        shape.friction = friction
         shape.elasticity = 0.0
+        shape.color = pygame.Color(color)
+
         self.space.add(body, shape)
         return body
 
@@ -67,18 +81,20 @@ class BallOnBallEnv(gym.Env):
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
             if body != self.space.static_body:
+                for shape in body.shapes:
+                    self.space.remove(shape)
                 self.space.remove(body)
 
         # Erstelle die Kugeln
         big_radius = 150
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
-        self.big_body = self._create_circle(big_mass, big_radius, big_pos)
+        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "red")
 
         small_radius = 60
         small_mass = 1
         small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
-        self.small_body = self._create_circle(small_mass, small_radius, small_pos)
+        self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
 
         # Anfangszustand
         return self._get_state()
@@ -92,9 +108,10 @@ class BallOnBallEnv(gym.Env):
     def step(self, action):
         """Führt eine Aktion aus und gibt die Ergebnisse zurück."""
         if action == 0:  # Links
-            self.small_body.apply_force_at_local_point((-self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((-self.force_amount, 0))
+
         elif action == 2:  # Rechts
-            self.small_body.apply_force_at_local_point((self.force_amount, 0), (0, 0))
+            self.small_body.apply_force_at_local_point((self.force_amount, 0))
 
         # Physik aktualisieren
         self.space.step(1 / 60.0)
