@@ -1,140 +1,151 @@
-import sys
-import math
-import time
-
-import pygame
+import gym
+from gym import spaces
+import numpy as np
 import pymunk
-import pymunk.pygame_util
+import pygame
+from pymunk.pygame_util import DrawOptions
 
-"""
-Dieses Beispiel demonstriert ein 2D-Physik-Environment ähnlich dem CartPole-Setup.
-Wir haben einen Boden (eine horizontale Linie), darauf eine große Kugel (Rad), 
-auf der wiederum eine kleinere Kugel liegt. Durch die Pfeiltasten (Links/Rechts) 
-kann auf die obere Kugel eine horizontale Kraft ausgeübt werden, wodurch diese 
-die untere Kugel in Bewegung versetzt.
+class BallOnBallEnv(gym.Env):
+    """
+    Gymnasium-Umgebung für das 2D-Physikspiel "Kugel auf Kugel".
+    """
 
-Wird die obere Kugel jedoch zu weit gedrückt oder fällt sie herunter, sodass sie 
-den Boden berührt, wird das Environment zurückgesetzt.
+    def __init__(self):
+        super(BallOnBallEnv, self).__init__()
 
-Abhängigkeiten:
-- pygame
-- pymunk
+        # Parameter der Umgebung
+        self.WIDTH = 800
+        self.HEIGHT = 600
+        self.GRAVITY = 1000
+        self.force_amount = 500.0  # Kraft durch Aktionen
+        self.ground_y = self.HEIGHT - 50
 
-Installation (wenn nötig):
-    pip install pygame pymunk
-"""
+        # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
+        self.action_space = spaces.Discrete(3)
 
-# Ein paar grundlegende Einstellungen
-WIDTH, HEIGHT = 800, 600
-FPS = 60
-GRAVITY = 1000  # Pixel pro Sekunde^2
+        # Zustandsraum: Position und Geschwindigkeit der kleinen Kugel
+        self.observation_space = spaces.Box(
+            low=np.array([0, 0, -np.inf, -np.inf]),
+            high=np.array([self.WIDTH, self.HEIGHT, np.inf, np.inf]),
+            dtype=np.float32
+        )
 
+        # Pymunk Space erstellen
+        self.space = pymunk.Space()
+        self.space.gravity = (0, self.GRAVITY)
+        self._create_static_line((0, self.ground_y), (self.WIDTH, self.ground_y))
 
-def create_static_line(space, start, end, thickness=5):
-    """Erzeuge eine statische Linie im Raum."""
-    body = space.static_body
-    shape = pymunk.Segment(body, start, end, thickness)
-    shape.friction = 1.0
-    shape.elasticity = 0.0
-    space.add(shape)
-    return shape
+        # Kugeln erstellen
+        self.big_body = None
+        self.small_body = None
+        self.screen = None
+        self.clock = None
+        self.draw_options = None
+        self.reset()
 
+    def _create_static_line(self, start, end, thickness=5):
+        body = self.space.static_body
+        shape = pymunk.Segment(body, start, end, thickness)
+        shape.friction = 1.0
+        shape.elasticity = 0.0
+        self.space.add(shape)
 
-def create_circle(space, mass, radius, pos, friction=1.0, elasticity=0.0):
-    """Erzeuge einen Kreis mit gegebener Masse, Radius und Startposition."""
-    moment = pymunk.moment_for_circle(mass, 0, radius)
-    body = pymunk.Body(mass, moment)
-    body.position = pos
-    shape = pymunk.Circle(body, radius)
-    shape.friction = friction
-    shape.elasticity = elasticity
-    space.add(body, shape)
-    return body, shape
+    def _create_circle(self, mass, radius, pos):
+        moment = pymunk.moment_for_circle(mass, 0, radius)
+        body = pymunk.Body(mass, moment)
+        body.position = pos
+        shape = pymunk.Circle(body, radius)
+        shape.friction = 1.0
+        shape.elasticity = 0.0
+        self.space.add(body, shape)
+        return body
 
+    def reset(self):
+        """Setzt die Umgebung zurück und gibt den Startzustand zurück."""
+        # Entferne alle dynamischen Bodies
+        for body in self.space.bodies[:]:
+            if body != self.space.static_body:
+                self.space.remove(body)
 
-def reset_environment(space, ground_y):
-    """Setzt die Positionen der Kugeln zurück."""
-    # Entferne alle dynamischen Bodies (bis auf static Bodies) aus dem Space
-    for shape in space.shapes[:]:
-        if not isinstance(shape, pymunk.Segment):
-            space.remove(shape)
-    for body in space.bodies[:]:
-        if body != space.static_body:
-            space.remove(body)
+        # Erstelle die Kugeln
+        big_radius = 50
+        big_mass = 10
+        big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
+        self.big_body = self._create_circle(big_mass, big_radius, big_pos)
 
-    # Erzeuge die Kugeln neu
-    big_radius = 50
-    big_mass = 10
-    big_pos = (WIDTH / 2, ground_y - big_radius - 1)
-    big_body, big_shape = create_circle(space, big_mass, big_radius, big_pos, friction=1.0, elasticity=0.0)
+        small_radius = 20
+        small_mass = 1
+        small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
+        self.small_body = self._create_circle(small_mass, small_radius, small_pos)
 
-    small_radius = 20
-    small_mass = 1
-    small_pos = (WIDTH / 2, big_body.position.y - big_radius - small_radius - 1)
-    small_body, small_shape = create_circle(space, small_mass, small_radius, small_pos, friction=1.0, elasticity=0.0)
+        # Anfangszustand
+        return self._get_state()
 
-    return big_body, small_body
+    def _get_state(self):
+        """Gibt den aktuellen Zustand der Umgebung zurück."""
+        pos = self.small_body.position
+        vel = self.small_body.velocity
+        return np.array([pos.x, pos.y, vel.x, vel.y], dtype=np.float32)
 
+    def step(self, action):
+        """Führt eine Aktion aus und gibt die Ergebnisse zurück."""
+        if action == 0:  # Links
+            self.small_body.apply_force_at_local_point((-self.force_amount, 0), (0, 0))
+        elif action == 2:  # Rechts
+            self.small_body.apply_force_at_local_point((self.force_amount, 0), (0, 0))
 
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("2D Physics Environment - Kugel auf Kugel")
-    clock = pygame.time.Clock()
+        # Physik aktualisieren
+        self.space.step(1 / 60.0)
 
-    # Pymunk Space erstellen
-    space = pymunk.Space()
-    space.gravity = (0, GRAVITY)
+        # Zustand, Belohnung und Fertigstellungsstatus
+        state = self._get_state()
+        done = state[1] + 20 >= self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
+        reward = 1.0 if not done else -10.0
 
-    draw_options = pymunk.pygame_util.DrawOptions(screen)
+        if done:
+            self.reset()
 
-    # Bodenlinie erstellen
-    ground_y = HEIGHT - 50
-    ground = create_static_line(space, (0, ground_y), (WIDTH, ground_y))
+        return state, reward, done, {}
 
-    # Erzeuge anfängliche Kugeln
-    big_body, small_body = reset_environment(space, ground_y)
+    def render(self, mode="human"):
+        """Optional: Rendering der Umgebung."""
+        if self.screen is None:
+            pygame.init()
+            self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+            self.clock = pygame.time.Clock()
+            self.draw_options = DrawOptions(self.screen)
 
-    # Steuerungs-Parameter
-    force_amount = 500.0  # Kraft die auf die kleine Kugel ausgeübt wird
-
-    running = True
-    while running:
-        dt = 1.0 / FPS
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                self.close()
+                return
 
-        keys = pygame.key.get_pressed()
-        # Kraft auf die kleine Kugel anwenden, wenn Pfeiltasten gedrückt sind
-        if keys[pygame.K_LEFT]:
-            # Kraft nach links
-            small_body.apply_force_at_local_point((-force_amount, 0), (0, 0))
-        if keys[pygame.K_RIGHT]:
-            # Kraft nach rechts
-            small_body.apply_force_at_local_point((force_amount, 0), (0, 0))
+        self.screen.fill((255, 255, 255))
+        self.space.debug_draw(self.draw_options)
 
-        # Physik updaten
-        space.step(dt)
+        # Aktualisieren des Fensters
+        pygame.display.update()
+        self.clock.tick(60)
 
-        # Prüfen, ob die obere Kugel auf den Boden gefallen ist:
-        # Wenn die Unterkante der oberen Kugel unter/hinter dem Boden liegt, ist sie gefallen
-        if small_body.position.y + 20 >= ground_y:
-            # Environment zurücksetzen
-            big_body, small_body = reset_environment(space, ground_y)
+    def close(self):
+        """Optionale Aufräumarbeiten."""
+        if self.screen is not None:
+            pygame.quit()
+            self.screen = None
+            self.clock = None
+            self.draw_options = None
 
-        # Bildschirm aktualisieren
-        screen.fill((255, 255, 255))
-        space.debug_draw(draw_options)
+# Beispiel-Test der Umgebung
+if __name__ == "__main__":
+    env = BallOnBallEnv()
+    state = env.reset()
+    print("Startzustand:", state)
+    done = False
 
-        # Zusätzliche Hilfslinien oder Texte:
-        font = pygame.font.SysFont("Arial", 20)
-        text = font.render("Links/Rechts Pfeiltasten: obere Kugel horizontal bewegen. Fällt sie zu Boden, Reset.", True,
-                           (0, 0, 0))
-        screen.blit(text, (10, 10))
+    while not done:
+        action = env.action_space.sample()  # Zufällige Aktion
+        state, reward, done, info = env.step(action)
+        env.render()
+        print(f"State: {state}, Reward: {reward}, Done: {done}")
 
-        pygame.display.flip()
-        clock.tick(FPS)
-
-    pygame.quit()
-    sys.exit()
+    env.close()
