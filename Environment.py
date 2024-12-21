@@ -5,6 +5,18 @@ import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
 
+
+class CustomDrawOptions(DrawOptions):
+    def draw_circle(self, pos, radius, angle, outline_color, fill_color):
+        # Farben je nach Ballgröße definieren
+        if radius > 30:  # Großer Ball
+            fill_color = (0, 255, 0)  # Grün
+        else:  # Kleiner Ball
+            fill_color = (0, 0, 0)  # Schwarz
+
+        # Zeichne den Kreis ohne Querstrich
+        pygame.draw.circle(self.surface, fill_color, (int(pos[0]), int(pos[1])), int(radius))
+
 class BallOnBallEnv(gym.Env):
     """
     Gymnasium-Umgebung für das 2D-Physikspiel "Kugel auf Kugel".
@@ -40,7 +52,7 @@ class BallOnBallEnv(gym.Env):
         self.small_body = None
         self.screen = None
         self.clock = None
-        self.draw_options = None
+        self.draw_options = CustomDrawOptions(self.screen)
         self.reset()
 
     def _create_static_line(self, start, end, thickness=5):
@@ -50,13 +62,14 @@ class BallOnBallEnv(gym.Env):
         shape.elasticity = 0.0
         self.space.add(shape)
 
-    def _create_circle(self, mass, radius, pos, friction=0):
+    def _create_circle(self, mass, radius, pos, color, friction=0):
         moment = pymunk.moment_for_circle(mass, 0, radius)
         body = pymunk.Body(mass, moment)
         body.position = pos
         shape = pymunk.Circle(body, radius)
         shape.friction = friction
         shape.elasticity = 0.0
+        shape.color = pygame.Color(color)
 
         self.space.add(body, shape)
         return body
@@ -74,12 +87,12 @@ class BallOnBallEnv(gym.Env):
         big_radius = 50
         big_mass = 10
         big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
-        self.big_body = self._create_circle(big_mass, big_radius, big_pos)
+        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "red")
 
         small_radius = 20
         small_mass = 1
         small_pos = (self.WIDTH / 2, big_pos[1] - big_radius - small_radius - 1)
-        self.small_body = self._create_circle(small_mass, small_radius, small_pos, friction=1)
+        self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
 
         # Anfangszustand
         return self._get_state()
