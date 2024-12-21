@@ -164,7 +164,7 @@ class BallOnBallEnv(gym.Env):
 
         # Ausgabe: 40x30 Graustufenarray
         res =  grayscale_array[6:-2]
-        torch.tensor(res)
+        return torch.tensor(res)
 
 
     def close(self):
