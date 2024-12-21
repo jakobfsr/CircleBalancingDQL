@@ -17,7 +17,7 @@ class BallOnBallEnv(gym.Env):
         self.WIDTH = 800
         self.HEIGHT = 600
         self.GRAVITY = 1000
-        self.force_amount = 500.0  # Kraft durch Aktionen
+        self.force_amount = 5000.0  # Kraft durch Aktionen
         self.ground_y = self.HEIGHT - 50
 
         # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
@@ -137,15 +137,42 @@ class BallOnBallEnv(gym.Env):
 
 # Beispiel-Test der Umgebung
 if __name__ == "__main__":
+    # Initialisiere die Umgebung
     env = BallOnBallEnv()
     state = env.reset()
     print("Startzustand:", state)
     done = False
 
-    while not done:
-        action = env.action_space.sample()  # Zufällige Aktion
-        state, reward, done, info = env.step(action)
-        env.render()
-        print(f"State: {state}, Reward: {reward}, Done: {done}")
+    # Initialisiere Pygame
+    pygame.init()
+    screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
 
-    env.close()
+    print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
+
+    try:
+        while not done:
+            # Standardaktion: Nichts (1)
+            action = 1
+
+            # Prüfe, ob eine Taste gedrückt ist
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_LEFT]:
+                action = 0  # Aktion: Links
+            elif keys[pygame.K_RIGHT]:
+                action = 2  # Aktion: Rechts
+            elif keys[pygame.K_UP]:
+                action = 1  # Aktion: Nichts
+
+            # Überprüfe andere Events, wie das Schließen des Fensters
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                    break
+
+            # Schritt in der Umgebung
+            state, reward, done, info = env.step(action)
+            env.render()
+            print(f"State: {state}, Reward: {reward}, Done: {done}")
+    finally:
+        env.close()
+        pygame.quit()
