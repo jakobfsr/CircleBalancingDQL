@@ -12,10 +12,10 @@ class BallOnBallEnv(gym.Env):
     """
 
     # Erstelle die Kugeln
-    BIG_RADIUS = 150
+    BIG_RADIUS = 100
     BIG_MASS = 10
 
-    SMALL_RADIUS = 60
+    SMALL_RADIUS = 30
     SMALL_MASS = 1
 
     # Parameter der Umgebung
@@ -92,12 +92,12 @@ class BallOnBallEnv(gym.Env):
                 self.space.remove(body)
 
 
-        big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 1)
+        big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 5)
         self.big_body = self._create_circle(self.BIG_MASS, self.BIG_RADIUS, big_pos, "gray")
 
         small_pos = (
             self.WIDTH / 2 + np.random.choice(self.OFFSETS),
-            big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS - 1,
+            big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS,
         )
         self.small_body = self._create_circle(self.SMALL_MASS, self.SMALL_RADIUS, small_pos, "black", friction=1)
 
@@ -154,7 +154,9 @@ class BallOnBallEnv(gym.Env):
             self.screen.blit(self.canvas, (0, 0))
             pygame.display.flip()
             self.clock.tick(self.metadata["render_fps"])
-        return np.transpose(np.array(pygame.surfarray.array3d(self.canvas)), axes=(1, 0, 2))
+
+        arr = np.array(pygame.surfarray.array3d(self.canvas))
+        return np.transpose(arr, axes=(1, 0, 2))
 
     def close(self):
         """Schließt Pygame-Ressourcen."""
@@ -162,7 +164,9 @@ class BallOnBallEnv(gym.Env):
             pygame.quit()
             self.screen = None
             self.clock = None
-# Beispiel-Test der Umgebung
+
+
+
 if __name__ == "__main__":
     # Initialisiere die Umgebung
     env = BallOnBallEnv(render_mode="human")
@@ -180,6 +184,7 @@ if __name__ == "__main__":
         state, reward, done, info = env.step(action)
         print(f"State: {state}, Reward: {reward}, Done: {done}")
         print(env.render())
+        arr = env.render()
      #   screen_array = env.get_state()
         pass
 
