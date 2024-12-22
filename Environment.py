@@ -12,10 +12,10 @@ class BallOnBallEnv(gym.Env):
     """
 
     # Erstelle die Kugeln
-    BIG_RADIUS = 150
+    BIG_RADIUS = 100
     BIG_MASS = 10
 
-    SMALL_RADIUS = 60
+    SMALL_RADIUS = 30
     SMALL_MASS = 1
 
     # Parameter der Umgebung
@@ -92,12 +92,12 @@ class BallOnBallEnv(gym.Env):
                 self.space.remove(body)
 
 
-        big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 1)
+        big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 5)
         self.big_body = self._create_circle(self.BIG_MASS, self.BIG_RADIUS, big_pos, "gray")
 
         small_pos = (
             self.WIDTH / 2 + np.random.choice(self.OFFSETS),
-            big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS - 1,
+            big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS,
         )
         self.small_body = self._create_circle(self.SMALL_MASS, self.SMALL_RADIUS, small_pos, "black", friction=1)
 
