@@ -1,51 +1,47 @@
-from datetime import time
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
-import torch
-import matplotlib.pyplot as plt
-import skimage.measure
-from sympy.physics.units import action
 
-
-class CustomDrawOptions(DrawOptions):
-    def draw_circle(self, pos, radius, angle, outline_color, fill_color):
-        # Farben je nach Ballgröße definieren
-        if radius > 30:  # Großer Ball
-            fill_color = (0, 255, 0)  # Grün
-        else:  # Kleiner Ball
-            fill_color = (0, 0, 0)  # Schwarz
-
-        # Zeichne den Kreis ohne Querstrich
-        pygame.draw.circle(self.surface, fill_color, (int(pos[0]), int(pos[1])), int(radius))
 
 class BallOnBallEnv(gym.Env):
     """
     Gymnasium-Umgebung für das 2D-Physikspiel "Kugel auf Kugel".
     """
 
-    def __init__(self):
+    # Erstelle die Kugeln
+    BIG_RADIUS = 150
+    BIG_MASS = 10
+
+    SMALL_RADIUS = 60
+    SMALL_MASS = 1
+
+    # Parameter der Umgebung
+    WIDTH = 800
+    HEIGHT = 600
+    GRAVITY = 1000
+    OFFSETS = [0.1, -0.1]  # Random offsets
+    force_amount = 700.0  # Kraft durch Aktionen
+
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 120}
+
+    def __init__(self, render_mode="rgb_array"):
         super(BallOnBallEnv, self).__init__()
 
-        # Parameter der Umgebung
-        self.WIDTH = 800
-        self.HEIGHT = 600
-        self.GRAVITY = 1000
-        self.OFFSETS = [0.1, -0.1] # Random values to not place in the perfect center of upper ball
-        self.force_amount = 700.0  # Kraft durch Aktionen
+        self.render_mode = render_mode
+
+
         self.ground_y = self.HEIGHT - 50
 
-        # Aktionen: [-1] für links, [0] für keine Aktion, [1] für rechts
+        # Aktionen: 0 = links, 1 = keine Aktion, 2 = rechts
         self.action_space = spaces.Discrete(3)
 
         # Zustandsraum: Position und Geschwindigkeit der kleinen Kugel
         self.observation_space = spaces.Box(
-            low=np.array([0, 0, -np.inf, -np.inf]),
-            high=np.array([self.WIDTH, self.HEIGHT, np.inf, np.inf]),
-            dtype=np.float32
+            low=np.array([0, 0, -np.inf, -np.inf], dtype=np.float32),
+            high=np.array([self.WIDTH, self.HEIGHT, np.inf, np.inf], dtype=np.float32),
         )
 
         # Pymunk Space erstellen
@@ -53,12 +49,17 @@ class BallOnBallEnv(gym.Env):
         self.space.gravity = (0, self.GRAVITY)
         self._create_static_line((0, self.ground_y), (self.WIDTH, self.ground_y))
 
+        # Pygame Canvas und Optionen
+        self.canvas = pygame.Surface((self.WIDTH, self.HEIGHT))
+        self.draw_options = DrawOptions(self.canvas)
+
+        # Pygame-Fenster nur bei `human`
+        self.screen = None
+        self.clock = None
+
         # Kugeln erstellen
         self.big_body = None
         self.small_body = None
-        self.screen = None
-        self.clock = None
-        self.draw_options = CustomDrawOptions(self.screen)
         self.reset()
 
     def _create_static_line(self, start, end, thickness=5):
@@ -76,12 +77,13 @@ class BallOnBallEnv(gym.Env):
         shape.friction = friction
         shape.elasticity = 0.0
         shape.color = pygame.Color(color)
-
         self.space.add(body, shape)
         return body
 
-    def reset(self):
+    def reset(self, seed=None, options=None):
         """Setzt die Umgebung zurück und gibt den Startzustand zurück."""
+        super().reset(seed=seed)
+
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
             if body != self.space.static_body:
@@ -89,19 +91,17 @@ class BallOnBallEnv(gym.Env):
                     self.space.remove(shape)
                 self.space.remove(body)
 
-        # Erstelle die Kugeln
-        big_radius = 150
-        big_mass = 10
-        big_pos = (self.WIDTH / 2, self.ground_y - big_radius - 1)
-        self.big_body = self._create_circle(big_mass, big_radius, big_pos, "gray")
 
-        small_radius = 60
-        small_mass = 1
-        small_pos = (self.WIDTH / 2 + np.random.choice(self.OFFSETS), big_pos[1] - big_radius - small_radius - 1)
-        self.small_body = self._create_circle(small_mass, small_radius, small_pos, "black", friction=1)
+        big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 1)
+        self.big_body = self._create_circle(self.BIG_MASS, self.BIG_RADIUS, big_pos, "gray")
 
-        # Anfangszustand
-        return self._get_state()
+        small_pos = (
+            self.WIDTH / 2 + np.random.choice(self.OFFSETS),
+            big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS - 1,
+        )
+        self.small_body = self._create_circle(self.SMALL_MASS, self.SMALL_RADIUS, small_pos, "black", friction=1)
+
+        return self._get_state(), {}
 
     def _get_state(self):
         """Gibt den aktuellen Zustand der Umgebung zurück."""
@@ -113,72 +113,59 @@ class BallOnBallEnv(gym.Env):
         """Führt eine Aktion aus und gibt die Ergebnisse zurück."""
         if action == 0:  # Links
             self.small_body.apply_force_at_local_point((-self.force_amount, 0))
-
         elif action == 2:  # Rechts
             self.small_body.apply_force_at_local_point((self.force_amount, 0))
 
         # Physik aktualisieren
         self.space.step(1 / 60.0)
 
-        # Zustand, Belohnung und Fertigstellungsstatus
         state = self._get_state()
-        done = state[1] + 80 > self.ground_y  # Wenn die kleine Kugel auf den Boden fällt
+        small_y = state[1]  # y-Position der kleinen Kugel
+        big_y = self.big_body.position.y  # y-Position des Mittelpunkts der großen Kugel
+
+        # Berechnung von done
+        done = small_y >= (big_y - self.BIG_RADIUS * 0.75)
+
         reward = 1.0 if not done else -10.0
 
         if done:
             self.reset()
 
+        if self.render_mode == "human":
+            self.render()
+
         return state, reward, done, {}
 
-    def render(self, mode="human"):
-        """Optional: Rendering der Umgebung."""
-        if self.screen is None:
-            pygame.init()
-            self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
-            self.clock = pygame.time.Clock()
-            self.draw_options = DrawOptions(self.screen)
+    def render(self):
+        """Zeichnet die Umgebung entweder auf den Bildschirm oder gibt das RGB-Array zurück."""
+        # Hintergrund füllen
+        self.canvas.fill((255, 255, 255))
 
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.close()
-                return
-
-        self.screen.fill((255, 255, 255))
+        # Pymunk-Objekte auf die Canvas zeichnen
         self.space.debug_draw(self.draw_options)
 
-        # Aktualisieren des Fensters
-        pygame.display.update()
-        self.clock.tick(60)
+        if self.render_mode == "human":
+            if self.screen is None:
+                pygame.init()
+                self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+                self.clock = pygame.time.Clock()
 
-    def get_state(self):
-        # Auflösung auf 40x30 reduzieren
-        reduced_grayscale = pygame.transform.scale(self.screen, (40, 30))
-        reduced_array = pygame.surfarray.array3d(reduced_grayscale)
-
-        # Das resultierende Array in Graustufen umwandeln
-        final_grayscale = 0.299 * reduced_array[:, :, 0] + 0.587 * reduced_array[:, :, 1] + 0.114 * reduced_array[:, :,
-                                                                                                    2]
-
-        # Als numpy-Array mit Shape (40, 30) konvertieren
-        grayscale_array = final_grayscale.astype(np.uint8).T
-
-        # Ausgabe: 40x30 Graustufenarray
-        res =  grayscale_array[6:-2]
-        return torch.tensor(res)
-
+            # Canvas auf das Fenster kopieren
+            self.screen.blit(self.canvas, (0, 0))
+            pygame.display.flip()
+            self.clock.tick(self.metadata["render_fps"])
+        return np.transpose(np.array(pygame.surfarray.array3d(self.canvas)), axes=(1, 0, 2))
 
     def close(self):
-        """Optionale Aufräumarbeiten."""
+        """Schließt Pygame-Ressourcen."""
         if self.screen is not None:
             pygame.quit()
             self.screen = None
             self.clock = None
-            self.draw_options = None
-
 # Beispiel-Test der Umgebung
 if __name__ == "__main__":
     # Initialisiere die Umgebung
-    env = BallOnBallEnv()
+    env = BallOnBallEnv(render_mode="human")
     state = env.reset()
     print("Startzustand:", state)
     done = False
@@ -187,13 +174,13 @@ if __name__ == "__main__":
     pygame.init()
     screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
     env.render()
-    env.get_state()
+    #env.get_state()
     while True:
         action = env.action_space.sample()
         state, reward, done, info = env.step(action)
         print(f"State: {state}, Reward: {reward}, Done: {done}")
-        env.render()
-        screen_array = env.get_state()
+        print(env.render())
+     #   screen_array = env.get_state()
         pass
 
     """print("Steuere mit den Pfeiltasten: Links (0), Nichts (1), Rechts (2).")
