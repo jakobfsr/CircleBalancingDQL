@@ -22,7 +22,7 @@ BATCH_SIZE = 128  # original = 128
 GAMMA = 0.999  # original = 0.999
 EPS_START = 0.9  # original = 0.9
 EPS_END = 0.05  # original = 0.05
-EPS_DECAY = 50000  # original = 200
+EPS_DECAY = 5000  # original = 200
 TARGET_UPDATE = 50  # original = 10
 MEMORY_SIZE = 100000  # original = 10000
 END_SCORE = 2000  # 200 for Cartpole-v0

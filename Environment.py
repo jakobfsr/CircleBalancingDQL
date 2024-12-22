@@ -201,7 +201,7 @@ def capture_screen(env):
     grayscaled_img_array = T.Grayscale()(resized_img_array)
     final_tensor = T.ToTensor()(grayscaled_img_array)
 
-    return final_tensor
+    return final_tensor.unsqueeze(0)
 
 # Beispiel-Test der Umgebung
 if __name__ == "__main__":
