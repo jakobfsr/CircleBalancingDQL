@@ -16,18 +16,22 @@ from collections import deque
 
 from Environment import BallOnBallEnv, capture_screen
 
+matplotlib.use("Qt5Agg")
+
+plt.ion()
+
 ############ HYPERPARAMETERS ##############
 
-BATCH_SIZE = 128  # original = 128
+BATCH_SIZE = 256  # original = 128
 GAMMA = 0.999  # original = 0.999
 EPS_START = 0.9  # original = 0.9
 EPS_END = 0.05  # original = 0.05
-EPS_DECAY = 5000  # original = 200
+EPS_DECAY = 100000  # original = 200
 TARGET_UPDATE = 50  # original = 10
 MEMORY_SIZE = 100000  # original = 10000
-END_SCORE = 2000  # 200 for Cartpole-v0
-TRAINING_STOP = 142  # threshold for training stop
-N_EPISODES = 50000  # total episodes to be run
+END_SCORE = 20000000  # 200 for Cartpole-v0
+TRAINING_STOP = 10000000  # threshold for training stop
+N_EPISODES = 5000  # total episodes to be run
 LAST_EPISODES_NUM = 20  # number of episodes for stopping training
 FRAMES = 2  # state is the number of last frames: the more frames,
 # the more the state is detailed (still Markovian)
@@ -64,11 +68,11 @@ is_ipython = 'inline' in matplotlib.get_backend()
 if is_ipython:
     from IPython import display
 
-plt.ion()
+#plt.ion()
 
 # If gpu is to be used
-device = torch.device("cuda" if (torch.cuda.is_available() and USE_CUDA) else "cpu")
-# device = torch.device("mps" if torch.mps.is_available() else "cpu")
+device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
@@ -177,7 +181,7 @@ plt.show()
 
 eps_threshold = 0.9  # original = 0.9
 
-init_screen = capture_screen(env)
+init_screen = capture_screen(env).to(device)
 _, _, screen_height, screen_width = init_screen.shape
 print("Screen height: ", screen_height, " | Width: ", screen_width)
 
@@ -196,7 +200,7 @@ steps_done = 0
 
 
 # Action selection , if stop training == True, only exploitation
-def select_action(state, stop_training):
+def select_action(state, stop_training = False):
     global steps_done
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
@@ -205,7 +209,7 @@ def select_action(state, stop_training):
 
 
     # print('Epsilon = ', eps_threshold, end='\n')
-    if sample > eps_threshold:
+    if sample > eps_threshold or stop_training:
         with torch.no_grad():
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
@@ -236,11 +240,13 @@ def plot_durations(score):
         means = torch.cat((torch.zeros(99), means))
         plt.plot(means.numpy(), label='Last 100 mean')
         print('Episode: ', episode_number, ' | Score: ', score, '| Last 100 mean = ', last100_mean)
+        with open("output.txt", "a") as f:
+            f.write(f"Episode: {episode_number}, Score: {score}, Last 100 mean: {last100_mean}\n")
     plt.legend(loc='upper left')
-    # plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
-    plt.pause(0.001)  # pause a bit so that plots are updated
+    plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
+    # plt.pause(0.001)  # pause a bit so that plots are updated
     # plt.savefig('save_graph/' + graph_name)
-    if is_ipython:
+    if is_ipython and False:
         display.clear_output(wait=True)
         display.display(plt.gcf())
 
@@ -300,7 +306,7 @@ for i_episode in range(N_EPISODES):
     math.exp(-1. * steps_done / EPS_DECAY))
     # Initialize the environment and state
     env.reset()
-    init_screen = capture_screen(env)
+    init_screen = capture_screen(env).to(device)
     screens = deque([init_screen] * FRAMES, FRAMES)
     state = torch.cat(list(screens), dim=1)
 
@@ -311,7 +317,7 @@ for i_episode in range(N_EPISODES):
         state_variables, reward, done, _ = env.step(action.item())
 
         # Observe new state
-        screens.append(capture_screen(env))
+        screens.append(capture_screen(env).to(device))
         next_state = torch.cat(list(screens), dim=1) if not done else None
 
         # Reward modification for better stability
@@ -337,7 +343,6 @@ for i_episode in range(N_EPISODES):
 
         # Perform one step of the optimization (on the target network)
         if done:
-
             episode_durations.append(t + 1)
             plot_durations(t + 1)
             mean_last.append(t + 1)
@@ -351,11 +356,42 @@ for i_episode in range(N_EPISODES):
                 stop_training = 1
             break
 
+    # Speichere das Modell alle 100 Episoden
+    if i_episode % 10 == 0:
+        avg_reward = sum(episode_durations[-100:]) / 100 if len(episode_durations) >= 100 else sum(episode_durations) / len(episode_durations)
+        model_path = f"./models/Model_E{i_episode}.pth"
+        torch.save(policy_net.state_dict(), model_path)
+        print(f"Modell gespeichert: {model_path}")
+
+
     # Update the target network, copying all weights and biases in DQN
     if i_episode % TARGET_UPDATE == 0:
         target_net.load_state_dict(policy_net.state_dict())
 
 print('Complete')
+
+# Evaluation
+
+# policy_net(state).max(1)[1].view(1, 1)
+
+TEST_EPISODES = 10
+testenv = BallOnBallEnv(render_mode="human")
+for i_episode in range(TEST_EPISODES):
+    testenv.reset()
+    capture_screen(testenv)
+    screens = deque([init_screen] * FRAMES, FRAMES)
+    state = torch.cat(list(screens), dim=1)
+    for t in count():
+        with torch.no_grad():
+            action = policy_net(state).max(1)[1].view(1,1).item()
+        _, _, done, _ = testenv.step(action)
+        screens.append(capture_screen(testenv))
+        next_state = torch.cat(list(screens), dim=1) if not done else None
+        if done:
+            print(f'Episode {i_episode+1} finished after {t+1} timesteps')
+            break
+
+
 env.render()
 env.close()
 plt.ioff()

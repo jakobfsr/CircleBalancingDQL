@@ -17,7 +17,7 @@ class BallOnBallEnv(gym.Env):
 
     # Erstelle die Kugeln
     BIG_RADIUS = 100
-    BIG_MASS = 10
+    BIG_MASS = 4
 
     SMALL_RADIUS = 30
     SMALL_MASS = 1
@@ -25,11 +25,11 @@ class BallOnBallEnv(gym.Env):
     # Parameter der Umgebung
     WIDTH = 800
     HEIGHT = 600
-    GRAVITY = 1000
+    GRAVITY = 100
     OFFSETS = [0.1, -0.1]  # Random offsets
-    force_amount = 700.0  # Kraft durch Aktionen
+    force_amount = 1000  # Kraft durch Aktionen
 
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 120}
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
 
     def __init__(self, render_mode="rgb_array"):
         super(BallOnBallEnv, self).__init__()
@@ -64,6 +64,7 @@ class BallOnBallEnv(gym.Env):
         # Kugeln erstellen
         self.big_body = None
         self.small_body = None
+        self.spring = None
         self.reset()
 
     def _create_static_line(self, start, end, thickness=5):
@@ -90,10 +91,15 @@ class BallOnBallEnv(gym.Env):
 
         # Entferne alle dynamischen Bodies
         for body in self.space.bodies[:]:
+
             if body != self.space.static_body:
                 for shape in body.shapes:
                     self.space.remove(shape)
                 self.space.remove(body)
+
+        if self.spring is not None:
+            self.space.remove(self.spring)
+            self.spring = None
 
 
         big_pos = (self.WIDTH / 2, self.ground_y - self.BIG_RADIUS - 5)
@@ -104,6 +110,15 @@ class BallOnBallEnv(gym.Env):
             big_pos[1] - self.BIG_RADIUS - self.SMALL_RADIUS,
         )
         self.small_body = self._create_circle(self.SMALL_MASS, self.SMALL_RADIUS, small_pos, "black", friction=1)
+
+        self.spring = pymunk.DampedSpring(
+            self.big_body, self.small_body,  # Verknüpfe die beiden Körper
+            (0, 0), (0, 0),  # Lokale Ankerpunkte
+            rest_length=self.BIG_RADIUS + self.SMALL_RADIUS,  # Ruheabstand
+            stiffness=9999,  # Federstärke
+            damping=0,  # Dämpfung
+        )
+        self.space.add(self.spring)
 
         return self._get_state(), {}
 
@@ -140,7 +155,7 @@ class BallOnBallEnv(gym.Env):
 
         return state, reward, done, {}
 
-    def render(self):
+    def render(self, function_render_mode=False):
         """Zeichnet die Umgebung entweder auf den Bildschirm oder gibt das RGB-Array zurück."""
         # Hintergrund füllen
         self.canvas.fill((255, 255, 255))
@@ -148,7 +163,7 @@ class BallOnBallEnv(gym.Env):
         # Pymunk-Objekte auf die Canvas zeichnen
         self.space.debug_draw(self.draw_options)
 
-        if self.render_mode == "human":
+        if self.render_mode == "human" or function_render_mode:
             if self.screen is None:
                 pygame.init()
                 self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
@@ -170,6 +185,7 @@ class BallOnBallEnv(gym.Env):
 
 
 def capture_screen(env):
+
     img_array = env.render()
     #img_array = np.transpose(img_array, (0, 1, 2))
 
@@ -197,7 +213,7 @@ def capture_screen(env):
 
     img_tensor = torch.from_numpy(norm_img_array).permute(2, 0, 1)
     pil_img_array = T.ToPILImage()(img_tensor)
-    resized_img_array = T.Resize((60, 60), interpolation=Image.BICUBIC)(pil_img_array)
+    resized_img_array = T.Resize((120, 120), interpolation=Image.BICUBIC)(pil_img_array)
     grayscaled_img_array = T.Grayscale()(resized_img_array)
     final_tensor = T.ToTensor()(grayscaled_img_array)
 
@@ -217,12 +233,13 @@ if __name__ == "__main__":
     env.render()
     res = capture_screen(env)
 
-
+    action = 0
     while True:
-        action = env.action_space.sample()
+
         state, reward, done, info = env.step(action)
         print(f"State: {state}, Reward: {reward}, Done: {done}")
-        print(env.render())
+        if done:
+            env.reset()
      #   screen_array = env.get_state()
         pass
 
