@@ -5,6 +5,10 @@ import pymunk
 import pygame
 from pymunk.pygame_util import DrawOptions
 
+import torch
+import torchvision.transforms as T
+from PIL import Image
+
 
 class BallOnBallEnv(gym.Env):
     """
@@ -163,10 +167,7 @@ class BallOnBallEnv(gym.Env):
             self.screen = None
             self.clock = None
 
-import numpy as np
-import torch
-import torchvision.transforms as T
-from PIL import Image
+
 
 def capture_screen(env):
     img_array = env.render()
@@ -176,9 +177,9 @@ def capture_screen(env):
     screen_height, screen_width, _ = img_array.shape
 
     # Schneidet unwichtige Bereiche oben und unten ab
-    cut_upper = 0.9  # 90% des Bildes behalten
-    cut_lower = 0.1  # die unteren 10% abschneiden
-    img_array = img_array[int(screen_height * cut_lower):int(screen_height * cut_upper), :, :]
+    cut_upper = 0.4  # 90% des Bildes behalten
+    cut_lower = 0.8  # die unteren 10% abschneiden
+    img_array = img_array[int(screen_height * cut_upper):int(screen_height * cut_lower), :, :]
     relevant_width = int(1 * screen_width)
     lower_ball_x = int(env.big_body.position.x)
 
@@ -214,7 +215,9 @@ if __name__ == "__main__":
     pygame.init()
     screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
     env.render()
-    capture_screen(env)
+    res = capture_screen(env)
+
+
     while True:
         action = env.action_space.sample()
         state, reward, done, info = env.step(action)
