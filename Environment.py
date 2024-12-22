@@ -162,6 +162,46 @@ class BallOnBallEnv(gym.Env):
             pygame.quit()
             self.screen = None
             self.clock = None
+
+import numpy as np
+import torch
+import torchvision.transforms as T
+from PIL import Image
+
+def capture_screen(env):
+    img_array = env.render()
+    #img_array = np.transpose(img_array, (0, 1, 2))
+
+    # Bildschirmhöhe und -breite
+    screen_height, screen_width, _ = img_array.shape
+
+    # Schneidet unwichtige Bereiche oben und unten ab
+    cut_upper = 0.9  # 90% des Bildes behalten
+    cut_lower = 0.1  # die unteren 10% abschneiden
+    img_array = img_array[int(screen_height * cut_lower):int(screen_height * cut_upper), :, :]
+    relevant_width = int(1 * screen_width)
+    lower_ball_x = int(env.big_body.position.x)
+
+    # Zentrieren um die Kugel
+    if lower_ball_x < relevant_width // 2:
+        slice_range = slice(0, relevant_width)
+    elif lower_ball_x > (screen_width - relevant_width // 2):
+        slice_range = slice(screen_width - relevant_width, screen_width)
+    else:
+        slice_range = slice(lower_ball_x - relevant_width // 2,
+                            lower_ball_x + relevant_width // 2)
+
+    centered_img_array = img_array[:, slice_range, :]
+    norm_img_array = np.ascontiguousarray(centered_img_array, dtype=np.float32) / 255.0
+
+    img_tensor = torch.from_numpy(norm_img_array).permute(2, 0, 1)
+    pil_img_array = T.ToPILImage()(img_tensor)
+    resized_img_array = T.Resize((60, 60), interpolation=Image.BICUBIC)(pil_img_array)
+    grayscaled_img_array = T.Grayscale()(resized_img_array)
+    final_tensor = T.ToTensor()(grayscaled_img_array)
+
+    return final_tensor
+
 # Beispiel-Test der Umgebung
 if __name__ == "__main__":
     # Initialisiere die Umgebung
@@ -174,7 +214,7 @@ if __name__ == "__main__":
     pygame.init()
     screen = pygame.display.set_mode((400, 300))  # Dummy-Fenster für Events
     env.render()
-    #env.get_state()
+    capture_screen(env)
     while True:
         action = env.action_space.sample()
         state, reward, done, info = env.step(action)
