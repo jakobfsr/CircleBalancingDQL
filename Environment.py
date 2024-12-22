@@ -18,6 +18,13 @@ class BallOnBallEnv(gym.Env):
     SMALL_RADIUS = 60
     SMALL_MASS = 1
 
+    # Parameter der Umgebung
+    WIDTH = 800
+    HEIGHT = 600
+    GRAVITY = 1000
+    OFFSETS = [0.1, -0.1]  # Random offsets
+    force_amount = 700.0  # Kraft durch Aktionen
+
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 120}
 
     def __init__(self, render_mode="rgb_array"):
@@ -25,12 +32,7 @@ class BallOnBallEnv(gym.Env):
 
         self.render_mode = render_mode
 
-        # Parameter der Umgebung
-        self.WIDTH = 800
-        self.HEIGHT = 600
-        self.GRAVITY = 1000
-        self.OFFSETS = [0.1, -0.1]  # Random offsets
-        self.force_amount = 700.0  # Kraft durch Aktionen
+
         self.ground_y = self.HEIGHT - 50
 
         # Aktionen: 0 = links, 1 = keine Aktion, 2 = rechts
