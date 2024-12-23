@@ -26,12 +26,12 @@ BATCH_SIZE = 256  # original = 128
 GAMMA = 0.999  # original = 0.999
 EPS_START = 0.9  # original = 0.9
 EPS_END = 0.05  # original = 0.05
-EPS_DECAY = 100000  # original = 200
+EPS_DECAY = 500000  # original = 200
 TARGET_UPDATE = 50  # original = 10
 MEMORY_SIZE = 100000  # original = 10000
 END_SCORE = 20000000  # 200 for Cartpole-v0
 TRAINING_STOP = 10000000  # threshold for training stop
-N_EPISODES = 5000  # total episodes to be run
+N_EPISODES = 50000  # total episodes to be run
 LAST_EPISODES_NUM = 20  # number of episodes for stopping training
 FRAMES = 2  # state is the number of last frames: the more frames,
 # the more the state is detailed (still Markovian)
@@ -240,10 +240,10 @@ def plot_durations(score):
         means = torch.cat((torch.zeros(99), means))
         plt.plot(means.numpy(), label='Last 100 mean')
         print('Episode: ', episode_number, ' | Score: ', score, '| Last 100 mean = ', last100_mean)
-        with open("output.txt", "a") as f:
+        with open("output2.txt", "a") as f:
             f.write(f"Episode: {episode_number}, Score: {score}, Last 100 mean: {last100_mean}\n")
     plt.legend(loc='upper left')
-    plt.savefig('./save_graph/cartpole_dqn_vision_test.png') # for saving graph with latest 100 mean
+    plt.savefig('./save_graph/cartpole_dqn_vision_test_run2.png') # for saving graph with latest 100 mean
     # plt.pause(0.001)  # pause a bit so that plots are updated
     # plt.savefig('save_graph/' + graph_name)
     if is_ipython and False:
@@ -359,7 +359,7 @@ for i_episode in range(N_EPISODES):
     # Speichere das Modell alle 100 Episoden
     if i_episode % 10 == 0:
         avg_reward = sum(episode_durations[-100:]) / 100 if len(episode_durations) >= 100 else sum(episode_durations) / len(episode_durations)
-        model_path = f"./models/Model_E{i_episode}.pth"
+        model_path = f"./models_run2/Model_E{i_episode}.pth"
         torch.save(policy_net.state_dict(), model_path)
         print(f"Modell gespeichert: {model_path}")
 
@@ -374,22 +374,6 @@ print('Complete')
 
 # policy_net(state).max(1)[1].view(1, 1)
 
-TEST_EPISODES = 10
-testenv = BallOnBallEnv(render_mode="human")
-for i_episode in range(TEST_EPISODES):
-    testenv.reset()
-    capture_screen(testenv)
-    screens = deque([init_screen] * FRAMES, FRAMES)
-    state = torch.cat(list(screens), dim=1)
-    for t in count():
-        with torch.no_grad():
-            action = policy_net(state).max(1)[1].view(1,1).item()
-        _, _, done, _ = testenv.step(action)
-        screens.append(capture_screen(testenv))
-        next_state = torch.cat(list(screens), dim=1) if not done else None
-        if done:
-            print(f'Episode {i_episode+1} finished after {t+1} timesteps')
-            break
 
 
 env.render()
